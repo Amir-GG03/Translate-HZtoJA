@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Un pequeño estilo para el fondo */
+body {
+  background-color: #f8fafc;
+  /* Un gris muy claro */
+  min-height: 100vh;
+}

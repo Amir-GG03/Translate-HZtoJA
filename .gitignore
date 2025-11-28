@@ -1,0 +1,6 @@
+/.DS_Store
+/__pycache__
+/es-it.txt
+/nllb-traductor-es-it
+/train_clean.es
+/train_clean.it
