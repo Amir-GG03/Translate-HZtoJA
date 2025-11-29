@@ -5,10 +5,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
-print("INIT SERVER")
+print("INIT SERVER...")
 
+# Configuración
 ruta_modelo = "SPtoIT"
 
+# Detección de Hardware
 if torch.backends.mps.is_available():
     device = "mps"
 elif torch.cuda.is_available():
@@ -22,10 +24,10 @@ print(f"Hardware: {device}")
 config = PeftConfig.from_pretrained(ruta_modelo)
 tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
 
-# Cargar Modelo Base
+# Cargar Modelo Base (Con 'eager' para permitir extracción de atención)
 model_base = AutoModelForSeq2SeqLM.from_pretrained(
     config.base_model_name_or_path,
-    dtype=torch.float32, 
+    torch_dtype=torch.float32, 
     low_cpu_mem_usage=True,
     attn_implementation="eager"
 )
@@ -37,6 +39,7 @@ model.eval()
 
 app = FastAPI(title="API Traductor NLLB-LoRA")
 
+# Configuración CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -53,17 +56,16 @@ class TranslationRequest(BaseModel):
 @app.post("/translate")
 async def translate(request: TranslationRequest):
     try:
-        # Configurar idioma origen
+        # 1. Configurar idiomas
         tokenizer.src_lang = request.source_lang
+        tokenizer.tgt_lang = request.target_lang
         
-        # Procesar entrada
+        # 2. Procesar entrada
         inputs = tokenizer(request.text, return_tensors="pt").to(device)
-        
-        # Obtener ID del idioma destino
         forced_bos_id = tokenizer.convert_tokens_to_ids(request.target_lang)
         
         with torch.no_grad():
-            # 1. GENERAR LA TRADUCCIÓN
+            # A. Generar traducción
             generated_tokens = model.generate(
                 **inputs,
                 forced_bos_token_id=forced_bos_id,
@@ -72,46 +74,53 @@ async def translate(request: TranslationRequest):
                 early_stopping=True
             )
             
-            # 2. ### NUEVO: GENERAR MATRIZ DE ATENCIÓN ###
-            # Hacemos una pasada solo por el Encoder para ver las relaciones internas
-            encoder_outputs = model.model.get_encoder()(
+            # Decodificar texto
+            translation_text = tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
+
+            # B. Extraer Atención Cruzada (Cross-Attention) de la Capa 2
+            # Tokenizamos el resultado para pasarlo como target
+            target_inputs = tokenizer(
+                text_target=translation_text, 
+                return_tensors="pt",
+                add_special_tokens=True
+            ).to(device)
+
+            # Forward pass manual
+            outputs = model(
                 input_ids=inputs["input_ids"],
                 attention_mask=inputs["attention_mask"],
-                output_attentions=True,
-                return_dict=True
+                decoder_input_ids=target_inputs["input_ids"],
+                output_attentions=True 
             )
             
-            # encoder_outputs.attentions es una tupla (una por capa)
-            # Tomamos la ÚLTIMA capa [-1], que tiene la información más semántica
-            # Shape original: (batch=1, num_heads=16, seq_len, seq_len)
-            last_layer_attention = encoder_outputs.attentions[-1][0] 
+            # SELECCIÓN CRÍTICA: Capa 2 (Index 2)
+            # Esta capa mostró la mejor alineación semántica en las pruebas
+            layer_2_attention = outputs.cross_attentions[2][0]
             
-            # Promediamos las 16 cabezas para tener una sola matriz fácil de visualizar 2D
-            # Shape resultante: (seq_len, seq_len)
-            avg_attention = last_layer_attention.mean(dim=0)
+            # Promediar las cabezas (heads)
+            avg_attention = layer_2_attention.mean(dim=0)
             
-            # Convertimos a lista de Python para que FastAPI lo pueda mandar como JSON
+            # Convertir a lista para JSON
             attention_matrix = avg_attention.cpu().numpy().tolist()
-            
-            # Obtenemos los tokens (palabras) para que el front sepa qué etiquetar
-            input_tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
-            # Limpiamos el caracter especial de SentencePiece " "
-            input_tokens = [t.replace(' ', '') for t in input_tokens]
 
-        # Decodificar
-        translation = tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
-        
+            # C. Preparar etiquetas (Tokens)
+            src_tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
+            src_tokens = [t.replace(' ', '') for t in src_tokens]
+            
+            tgt_tokens = tokenizer.convert_ids_to_tokens(target_inputs["input_ids"][0])
+            tgt_tokens = [t.replace(' ', '') for t in tgt_tokens]
+
         return {
             "original": request.text,
-            "translation": translation,
+            "translation": translation_text,
             "device": device,
-            # ### NUEVO: Enviamos los datos extra al front
             "attention": {
-                "matrix": attention_matrix, # Matriz 2D [[0.1, ...], [0.2, ...]]
-                "tokens": input_tokens      # Etiquetas ["El", "perro", ...]
+                "matrix": attention_matrix,
+                "src_tokens": src_tokens,
+                "tgt_tokens": tgt_tokens
             }
         }
 
     except Exception as e:
-        print(f"Error: {e}") # Imprimir error en consola servidor para debug
+        print(f"Error detallado: {e}") 
         raise HTTPException(status_code=500, detail=str(e))

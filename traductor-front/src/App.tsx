@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import { Mic, MicOff, Languages, ArrowRightLeft, Loader2, Copy, Check, BrainCircuit } from 'lucide-react';
 import useSpeechToText from './useSpeechToText';
 
-// URL de tu API
 const API_URL = "http://127.0.0.1:8000/translate";
 
 interface AttentionData {
   matrix: number[][];
-  tokens: string[];
+  src_tokens: string[];
+  tgt_tokens: string[];
 }
 
 function App() {
@@ -17,7 +17,6 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Hook de audio
   const { isListening, transcript, startListening, stopListening, hasSupport } = useSpeechToText('es-ES');
 
   useEffect(() => {
@@ -29,7 +28,7 @@ function App() {
 
     setIsLoading(true);
     setOutputText('');
-    setAttentionData(null); // Limpiar atención anterior
+    setAttentionData(null);
 
     try {
       const response = await fetch(API_URL, {
@@ -47,14 +46,13 @@ function App() {
       const data = await response.json();
       setOutputText(data.translation);
       
-      // Guardar datos de atención si la API los manda
       if (data.attention) {
         setAttentionData(data.attention);
       }
 
     } catch (error) {
       console.error("Error:", error);
-      setOutputText("Error: No se pudo conectar con el servidor de IA.");
+      setOutputText("Error al conectar con la API.");
     } finally {
       setIsLoading(false);
     }
@@ -69,7 +67,6 @@ function App() {
   return (
     <div className="min-h-screen flex flex-col items-center p-4 md:p-8 bg-slate-50">
       
-      {/* Header */}
       <div className="mb-8 text-center mt-4">
         <div className="flex items-center justify-center gap-3 mb-2">
           <div className="p-3 bg-blue-600 rounded-full text-white shadow-lg shadow-blue-200">
@@ -77,18 +74,17 @@ function App() {
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-slate-800 tracking-tight">Traductor NLLB</h1>
         </div>
-        <p className="text-slate-500 font-medium">Fine-Tuning con LoRA • Español ↔ Italiano</p>
+        <p className="text-slate-500 font-medium">Fine-Tuning Local • Español - Italiano</p>
       </div>
 
-      {/* Main Translation Card */}
       <div className="bg-white w-full max-w-5xl rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden mb-8">
-        <div className="flex flex-col md:flex-row h-auto md:h-[400px]">
+        <div className="flex flex-col md:flex-row h-auto md:h-[350px]">
           
           {/* Panel Izquierdo: Input */}
           <div className="flex-1 p-6 border-b md:border-b-0 md:border-r border-slate-100 flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <span className="font-bold text-slate-700 flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-full text-sm">
-                🇪🇸 Español
+                Español
               </span>
               {hasSupport && (
                 <button 
@@ -113,7 +109,6 @@ function App() {
             />
           </div>
 
-          {/* Botón Central */}
            <div className="relative flex items-center justify-center bg-slate-50 p-2 md:w-16">
               <div className="absolute inset-0 md:w-[1px] md:h-full w-full h-[1px] bg-slate-100 m-auto"></div>
               <button 
@@ -129,7 +124,7 @@ function App() {
           <div className="flex-1 p-6 bg-blue-50/30 flex flex-col">
             <div className="flex justify-between items-center mb-4">
                <span className="font-bold text-blue-800 flex items-center gap-2 bg-blue-100 px-3 py-1 rounded-full text-sm">
-                🇮🇹 Italiano
+                Italiano
               </span>
               {outputText && (
                   <button onClick={handleCopy} className="text-slate-400 hover:text-blue-600 transition-colors">
@@ -142,7 +137,7 @@ function App() {
                 {isLoading ? (
                     <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-3">
                         <Loader2 size={30} className="animate-spin text-blue-400"/>
-                        <span className="text-sm font-medium animate-pulse">Procesando tensores...</span>
+                        <span className="text-sm font-medium animate-pulse">Inferencia en curso...</span>
                     </div>
                 ) : outputText ? (
                     <p className="text-2xl font-medium text-slate-800 leading-relaxed">{outputText}</p>
@@ -154,21 +149,23 @@ function App() {
         </div>
       </div>
 
-      {/* Sección de Visualización de Atención */}
       {attentionData && !isLoading && (
-        <div className="w-full max-w-5xl animate-fade-in-up">
+        <div className="w-full max-w-5xl animate-fade-in-up pb-12">
           <div className="flex items-center gap-2 mb-4 text-slate-700">
             <BrainCircuit className="text-purple-600" />
-            <h2 className="text-xl font-bold">Matriz de Atención del Encoder</h2>
+            <h2 className="text-xl font-bold">Atención Cruzada (Capa 2)</h2>
           </div>
           
           <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-100 overflow-x-auto">
             <p className="text-sm text-slate-500 mb-6 max-w-2xl">
-              Este mapa muestra cómo el modelo relaciona las palabras entre sí para entender el contexto. 
-              Los cuadros <span className="font-bold text-blue-600">más oscuros</span> indican una relación gramatical o semántica más fuerte.
+              Este mapa muestra la <b>Alineación Neuronal</b>. Visualiza qué palabra en español (arriba) utiliza el modelo para generar cada palabra en italiano (izquierda).
             </p>
             
-            <AttentionHeatmap matrix={attentionData.matrix} tokens={attentionData.tokens} />
+            <AttentionHeatmap 
+                matrix={attentionData.matrix} 
+                srcTokens={attentionData.src_tokens} 
+                tgtTokens={attentionData.tgt_tokens} 
+            />
           </div>
         </div>
       )}
@@ -177,63 +174,88 @@ function App() {
   );
 }
 
-// --- SUB-COMPONENTE: Mapa de Calor ---
-const AttentionHeatmap = ({ matrix, tokens }: { matrix: number[][], tokens: string[] }) => {
-  // Truco: Si la frase es muy larga, limitamos para que no rompa la UI
-  const displayLimit = 20; 
-  const limitedTokens = tokens.slice(0, displayLimit);
-  const limitedMatrix = matrix.slice(0, displayLimit).map(row => row.slice(0, displayLimit));
+// --- COMPONENTE VISUALIZADOR DE ATENCIÓN CORREGIDO ---
+const AttentionHeatmap = ({ matrix, srcTokens, tgtTokens }: { matrix: number[][], srcTokens: string[], tgtTokens: string[] }) => {
+  
+  // CORRECCIÓN DE ALINEACIÓN:
+  // Usamos slice(0, -1). Mantenemos el índice 0 (inicio), solo borramos el índice -1 (final).
+  // Esto evita que las columnas se desplacen a la izquierda.
+  
+  const cleanSrcTokens = srcTokens.slice(0, -1);
+  const cleanTgtTokens = tgtTokens.slice(0, -1);
+  
+  // Recortamos la matriz igual: filas 0 a -1, columnas 0 a -1
+  const cleanMatrix = matrix
+    .slice(0, -1) 
+    .map(row => row.slice(0, -1));
+
+  const displayLimit = 28;
+  const displaySrc = cleanSrcTokens.slice(0, displayLimit);
+  const displayTgt = cleanTgtTokens.slice(0, displayLimit);
+  const displayMatrix = cleanMatrix.slice(0, displayLimit).map(row => row.slice(0, displayLimit));
 
   return (
-    <div className="inline-block min-w-full">
+    <div className="inline-block min-w-full overflow-x-auto p-2">
       <div 
-        className="grid gap-1"
+        className="grid gap-[1px]"
         style={{ 
-          gridTemplateColumns: `auto repeat(${limitedTokens.length}, minmax(40px, 1fr))` 
+          gridTemplateColumns: `min-content repeat(${displaySrc.length}, minmax(45px, 1fr))` 
         }}
       >
-        {/* Cabecera vacía (esquina) */}
-        <div className="h-8"></div>
+        {/* Esquina superior izquierda vacía */}
+        <div className="h-24"></div>
 
-        {/* Eje X (Tokens Superiores) */}
-        {limitedTokens.map((token, i) => (
-          <div key={`head-${i}`} className="text-xs font-mono text-slate-500 -rotate-45 origin-bottom-left translate-x-4 mb-2 truncate">
-            {token}
+        {/* Cabeceras Eje X (Español) */}
+        {displaySrc.map((token, i) => (
+          <div key={`head-${i}`} className="relative h-24 w-full">
+             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-32 -rotate-45 origin-bottom-left text-xs font-mono text-slate-600 font-medium truncate text-left ml-2 hover:text-blue-600 transition-colors cursor-default">
+                {token}
+             </div>
           </div>
         ))}
 
         {/* Filas de la matriz */}
-        {limitedMatrix.map((row, i) => (
-          <>
-            {/* Eje Y (Tokens Izquierda) */}
-            <div key={`row-label-${i}`} className="text-xs font-mono text-slate-500 flex items-center justify-end pr-3">
-              {limitedTokens[i]}
-            </div>
+        {displayMatrix.map((row, i) => {
+            
+            // Normalización por fila
+            const maxVal = Math.max(...row, 0.00001);
+            const minVal = Math.min(...row);
 
-            {/* Celdas */}
-            {row.map((value, j) => (
-              <div
-                key={`cell-${i}-${j}`}
-                className="aspect-square rounded-sm transition-all hover:scale-125 hover:z-10 hover:ring-2 ring-purple-400 relative group cursor-crosshair"
-                style={{
-                  backgroundColor: `rgba(79, 70, 229, ${value})`, // Color Indigo base con opacidad dinámica
-                  opacity: Math.max(0.1, value * 3) // Boost visual para que se vean mejor los valores bajos
-                }}
-              >
-                {/* Tooltip simple al pasar el mouse */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[10px] rounded hidden group-hover:block whitespace-nowrap z-20 pointer-events-none">
-                  {value.toFixed(4)}
+            return (
+              <>
+                {/* Etiqueta Eje Y (Italiano) */}
+                <div key={`row-label-${i}`} className="text-xs font-mono text-slate-600 flex items-center justify-end pr-3 font-bold whitespace-nowrap h-10">
+                  {displayTgt[i]}
                 </div>
-              </div>
-            ))}
-          </>
-        ))}
+
+                {/* Celdas de valores */}
+                {row.map((val, j) => {
+                  
+                  let intensity = (val - minVal) / (maxVal - minVal + 0.00001);
+                  if (intensity < 0.2) intensity = 0;
+
+                  return (
+                    <div
+                      key={`cell-${i}-${j}`}
+                      className="h-10 w-full rounded-sm border border-slate-50 relative group transition-transform hover:scale-110 hover:z-50"
+                      style={{
+                        backgroundColor: `rgba(79, 70, 229, ${intensity})`,
+                      }}
+                    >
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-800 text-white text-xs rounded shadow-xl hidden group-hover:block z-50 whitespace-nowrap pointer-events-none">
+                        <div className="font-bold border-b border-slate-600 pb-1 mb-1 text-center">
+                            Peso: {val.toFixed(4)}
+                        </div>
+                        {displaySrc[j]} ➔ {displayTgt[i]}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            );
+        })}
       </div>
-      {tokens.length > displayLimit && (
-        <p className="text-xs text-slate-400 mt-4 text-center italic">
-          * Visualización truncada a los primeros {displayLimit} tokens por espacio.
-        </p>
-      )}
     </div>
   );
 };
