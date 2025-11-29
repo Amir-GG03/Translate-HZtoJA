@@ -1,34 +1,35 @@
 import { useState, useEffect } from 'react';
-import { Mic, MicOff, Languages, ArrowRightLeft, Loader2, Copy, Check } from 'lucide-react';
+import { Mic, MicOff, Languages, ArrowRightLeft, Loader2, Copy, Check, BrainCircuit } from 'lucide-react';
 import useSpeechToText from './useSpeechToText';
 
-// URL de tu API FastAPI local (asegúrate de que uvicorn esté corriendo)
+// URL de tu API
 const API_URL = "http://127.0.0.1:8000/translate";
+
+interface AttentionData {
+  matrix: number[][];
+  tokens: string[];
+}
 
 function App() {
   const [inputText, setInputText] = useState('');
   const [outputText, setOutputText] = useState('');
+  const [attentionData, setAttentionData] = useState<AttentionData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Usamos nuestro hook de audio
+  // Hook de audio
   const { isListening, transcript, startListening, stopListening, hasSupport } = useSpeechToText('es-ES');
 
-  // Actualizamos el input text cuando el micrófono detecta algo
   useEffect(() => {
-    if (transcript) {
-      // Si estamos escuchando, reemplazamos. Si paramos, podríamos añadir.
-      // Para este ejemplo, el dictado reemplaza lo que había.
-      setInputText(transcript);
-    }
+    if (transcript) setInputText(transcript);
   }, [transcript]);
-
 
   const handleTranslate = async () => {
     if (!inputText.trim()) return;
 
     setIsLoading(true);
-    setOutputText(''); // Limpiar anterior
+    setOutputText('');
+    setAttentionData(null); // Limpiar atención anterior
 
     try {
       const response = await fetch(API_URL, {
@@ -36,17 +37,23 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: inputText,
-          source_lang: "spa_Latn", // Fijo en Español
-          target_lang: "ita_Latn"  // Fijo en Italiano
+          source_lang: "spa_Latn",
+          target_lang: "ita_Latn"
         })
       });
 
       if (!response.ok) throw new Error("Error en la red");
+      
       const data = await response.json();
       setOutputText(data.translation);
+      
+      // Guardar datos de atención si la API los manda
+      if (data.attention) {
+        setAttentionData(data.attention);
+      }
 
     } catch (error) {
-      console.error("Error traduciendo:", error);
+      console.error("Error:", error);
       setOutputText("Error: No se pudo conectar con el servidor de IA.");
     } finally {
       setIsLoading(false);
@@ -59,110 +66,176 @@ function App() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  // Componente de botón reutilizable con estilos de Tailwind
-  const Button = ({ onClick, disabled, children, variant = 'primary', className = '' }: any) => {
-    const baseStyle = "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
-    const variants = {
-      primary: "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500",
-      secondary: "bg-slate-200 text-slate-800 hover:bg-slate-300 focus:ring-slate-400",
-      danger: "bg-red-500 text-white hover:bg-red-600 focus:ring-red-500 animate-pulse",
-    };
-    return <button onClick={onClick} disabled={disabled} className={`${baseStyle} ${variants[variant as keyof typeof variants]} ${className}`}>{children}</button>
-  };
-
-
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
-
+    <div className="min-h-screen flex flex-col items-center p-4 md:p-8 bg-slate-50">
+      
       {/* Header */}
-      <div className="mb-8 text-center">
+      <div className="mb-8 text-center mt-4">
         <div className="flex items-center justify-center gap-3 mb-2">
-          <div className="p-3 bg-blue-100 rounded-full text-blue-600">
-            <Languages size={32} />
+          <div className="p-3 bg-blue-600 rounded-full text-white shadow-lg shadow-blue-200">
+            <Languages size={28} />
           </div>
-          <h1 className="text-4xl font-bold text-slate-800">Traductor IA</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-800 tracking-tight">Traductor NLLB</h1>
         </div>
-        <p className="text-slate-600">Español coloquial a Italiano natural</p>
+        <p className="text-slate-500 font-medium">Fine-Tuning con LoRA • Español ↔ Italiano</p>
       </div>
 
-      {/* Main Card */}
-      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
-        <div className="flex flex-col md:flex-row">
-
-          {/* Panel Izquierdo: Input (Español) */}
-          <div className="flex-1 p-6 border-b md:border-b-0 md:border-r border-slate-100">
+      {/* Main Translation Card */}
+      <div className="bg-white w-full max-w-5xl rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden mb-8">
+        <div className="flex flex-col md:flex-row h-auto md:h-[400px]">
+          
+          {/* Panel Izquierdo: Input */}
+          <div className="flex-1 p-6 border-b md:border-b-0 md:border-r border-slate-100 flex flex-col">
             <div className="flex justify-between items-center mb-4">
-              <span className="font-semibold text-slate-700 flex items-center gap-2">
-                🇪🇸 Español (Origen)
+              <span className="font-bold text-slate-700 flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-full text-sm">
+                🇪🇸 Español
               </span>
-
               {hasSupport && (
-                <Button
+                <button 
                   onClick={isListening ? stopListening : startListening}
-                  variant={isListening ? 'danger' : 'secondary'}
-                  className="text-sm py-1.5"
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                    isListening 
+                      ? 'bg-red-100 text-red-600 hover:bg-red-200 animate-pulse' 
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
                 >
-                  {isListening ? <><MicOff size={16} /> Detener</> : <><Mic size={16} /> Dictar</>}
-                </Button>
-              )}
-            </div>
-
-            <div className="relative">
-              <textarea
-                className="w-full h-48 p-4 bg-slate-50 rounded-xl border-none resize-none focus:ring-2 focus:ring-blue-500 outline-none text-lg text-slate-800 placeholder:text-slate-400 transition-all"
-                placeholder="Escribe algo o usa el micrófono..."
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTranslate(); } }}
-              />
-              {isListening && <span className="absolute bottom-4 right-4 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>}
-            </div>
-
-          </div>
-
-          {/* Botón Central de Acción */}
-          <div className="flex items-center justify-center p-4 bg-slate-50 md:bg-white">
-            <Button
-              onClick={handleTranslate}
-              disabled={isLoading || !inputText.trim()}
-              className="md:rotate-0 rotate-90 rounded-full p-4"
-            >
-              {isLoading ? <Loader2 className="animate-spin" /> : <ArrowRightLeft />}
-            </Button>
-          </div>
-
-          {/* Panel Derecho: Output (Italiano) */}
-          <div className="flex-1 p-6 bg-blue-50/50">
-            <div className="flex justify-between items-center mb-4">
-              <span className="font-semibold text-slate-700 flex items-center gap-2">
-                🇮🇹 Italiano (Destino)
-              </span>
-              {outputText && (
-                <button onClick={handleCopy} className="text-slate-500 hover:text-blue-600 transition-colors">
-                  {copied ? <Check size={20} className="text-green-500" /> : <Copy size={20} />}
+                  {isListening ? <><MicOff size={14}/> Escuchando...</> : <><Mic size={14}/> Dictar</>}
                 </button>
               )}
             </div>
+            
+            <textarea
+              className="flex-1 w-full bg-transparent border-none resize-none outline-none text-xl text-slate-800 placeholder:text-slate-300"
+              placeholder="Escribe algo aquí..."
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleTranslate(); }}}
+            />
+          </div>
 
-            <div className="w-full h-48 p-4 bg-white/80 rounded-xl border border-blue-100 overflow-auto text-lg text-slate-800 relative flex items-start">
-              {isLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 italic">
-                  <Loader2 size={20} className="animate-spin" /> Traduciendo...
-                </div>
-              ) : outputText ? (
-                <p>{outputText}</p>
-              ) : (
-                <p className="text-slate-400 italic">La traducción aparecerá aquí.</p>
+          {/* Botón Central */}
+           <div className="relative flex items-center justify-center bg-slate-50 p-2 md:w-16">
+              <div className="absolute inset-0 md:w-[1px] md:h-full w-full h-[1px] bg-slate-100 m-auto"></div>
+              <button 
+                onClick={handleTranslate} 
+                disabled={isLoading || !inputText.trim()}
+                className="z-10 bg-blue-600 text-white p-4 rounded-2xl shadow-lg shadow-blue-200 hover:scale-105 hover:bg-blue-700 transition-all disabled:opacity-50 disabled:scale-100 active:scale-95"
+              >
+                {isLoading ? <Loader2 className="animate-spin"/> : <ArrowRightLeft />}
+              </button>
+           </div>
+
+          {/* Panel Derecho: Output */}
+          <div className="flex-1 p-6 bg-blue-50/30 flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+               <span className="font-bold text-blue-800 flex items-center gap-2 bg-blue-100 px-3 py-1 rounded-full text-sm">
+                🇮🇹 Italiano
+              </span>
+              {outputText && (
+                  <button onClick={handleCopy} className="text-slate-400 hover:text-blue-600 transition-colors">
+                      {copied ? <Check size={18}/> : <Copy size={18}/>}
+                  </button>
               )}
+            </div>
+
+            <div className="flex-1 overflow-auto flex items-start">
+                {isLoading ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-3">
+                        <Loader2 size={30} className="animate-spin text-blue-400"/>
+                        <span className="text-sm font-medium animate-pulse">Procesando tensores...</span>
+                    </div>
+                ) : outputText ? (
+                    <p className="text-2xl font-medium text-slate-800 leading-relaxed">{outputText}</p>
+                ) : (
+                    <p className="text-slate-300 text-xl font-light">La traducción aparecerá aquí.</p>
+                )}
             </div>
           </div>
         </div>
       </div>
-      <p className="text-slate-400 text-sm mt-6">
-        Modelo: NLLB-200 (600M) + Adaptador LoRA personalizado. Corriendo localmente en Apple M2.
-      </p>
+
+      {/* Sección de Visualización de Atención */}
+      {attentionData && !isLoading && (
+        <div className="w-full max-w-5xl animate-fade-in-up">
+          <div className="flex items-center gap-2 mb-4 text-slate-700">
+            <BrainCircuit className="text-purple-600" />
+            <h2 className="text-xl font-bold">Matriz de Atención del Encoder</h2>
+          </div>
+          
+          <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-100 overflow-x-auto">
+            <p className="text-sm text-slate-500 mb-6 max-w-2xl">
+              Este mapa muestra cómo el modelo relaciona las palabras entre sí para entender el contexto. 
+              Los cuadros <span className="font-bold text-blue-600">más oscuros</span> indican una relación gramatical o semántica más fuerte.
+            </p>
+            
+            <AttentionHeatmap matrix={attentionData.matrix} tokens={attentionData.tokens} />
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+
+// --- SUB-COMPONENTE: Mapa de Calor ---
+const AttentionHeatmap = ({ matrix, tokens }: { matrix: number[][], tokens: string[] }) => {
+  // Truco: Si la frase es muy larga, limitamos para que no rompa la UI
+  const displayLimit = 20; 
+  const limitedTokens = tokens.slice(0, displayLimit);
+  const limitedMatrix = matrix.slice(0, displayLimit).map(row => row.slice(0, displayLimit));
+
+  return (
+    <div className="inline-block min-w-full">
+      <div 
+        className="grid gap-1"
+        style={{ 
+          gridTemplateColumns: `auto repeat(${limitedTokens.length}, minmax(40px, 1fr))` 
+        }}
+      >
+        {/* Cabecera vacía (esquina) */}
+        <div className="h-8"></div>
+
+        {/* Eje X (Tokens Superiores) */}
+        {limitedTokens.map((token, i) => (
+          <div key={`head-${i}`} className="text-xs font-mono text-slate-500 -rotate-45 origin-bottom-left translate-x-4 mb-2 truncate">
+            {token}
+          </div>
+        ))}
+
+        {/* Filas de la matriz */}
+        {limitedMatrix.map((row, i) => (
+          <>
+            {/* Eje Y (Tokens Izquierda) */}
+            <div key={`row-label-${i}`} className="text-xs font-mono text-slate-500 flex items-center justify-end pr-3">
+              {limitedTokens[i]}
+            </div>
+
+            {/* Celdas */}
+            {row.map((value, j) => (
+              <div
+                key={`cell-${i}-${j}`}
+                className="aspect-square rounded-sm transition-all hover:scale-125 hover:z-10 hover:ring-2 ring-purple-400 relative group cursor-crosshair"
+                style={{
+                  backgroundColor: `rgba(79, 70, 229, ${value})`, // Color Indigo base con opacidad dinámica
+                  opacity: Math.max(0.1, value * 3) // Boost visual para que se vean mejor los valores bajos
+                }}
+              >
+                {/* Tooltip simple al pasar el mouse */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[10px] rounded hidden group-hover:block whitespace-nowrap z-20 pointer-events-none">
+                  {value.toFixed(4)}
+                </div>
+              </div>
+            ))}
+          </>
+        ))}
+      </div>
+      {tokens.length > displayLimit && (
+        <p className="text-xs text-slate-400 mt-4 text-center italic">
+          * Visualización truncada a los primeros {displayLimit} tokens por espacio.
+        </p>
+      )}
+    </div>
+  );
+};
 
 export default App;
