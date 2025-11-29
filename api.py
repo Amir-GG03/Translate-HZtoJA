@@ -5,13 +5,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
-# --- 1. CONFIGURACIÓN INICIAL (Se ejecuta al arrancar) ---
 print("INIT SERVER")
 
-# Ruta al modelo (carpeta local)
 ruta_modelo = "SPtoIT"
 
-# Detectar dispositivo (Optimizado para M2)
 if torch.backends.mps.is_available():
     device = "mps"
 elif torch.cuda.is_available():
@@ -32,30 +29,27 @@ model_base = AutoModelForSeq2SeqLM.from_pretrained(
     low_cpu_mem_usage=True
 )
 
-# Cargar LoRA (Tu entrenamiento)
+# Cargar LoRA 
 model = PeftModel.from_pretrained(model_base, ruta_modelo)
 model = model.to(device)
 model.eval()
 
-# --- 2. DEFINICIÓN DE LA API ---
 app = FastAPI(title="API Traductor NLLB-LoRA")
 
-# Configurar CORS (Para que puedas llamarlo desde un frontend web)
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, cambia esto por tu dominio
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Modelo de datos para validar lo que te envían
 class TranslationRequest(BaseModel):
     text: str
-    source_lang: str = "spa_Latn"  # Valores por defecto
+    source_lang: str = "spa_Latn" 
     target_lang: str = "ita_Latn"
 
-# --- 3. ENDPOINT (La función que recibe los datos) ---
 @app.post("/translate")
 async def translate(request: TranslationRequest):
     try:
