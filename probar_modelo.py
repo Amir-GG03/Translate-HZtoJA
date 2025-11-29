@@ -2,37 +2,30 @@ import torch
 from peft import PeftModel, PeftConfig
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-# 1. RUTA DONDE GUARDASTE EL MODELO
-# Asegúrate de que la carpeta "SPtoIT" esté en el mismo lugar que este script
 ruta_modelo = "SPtoIT"
 config = PeftConfig.from_pretrained(ruta_modelo)
 
-# 2. CARGAR EL MODELO BASE
-# CAMBIO 1: Usamos torch.float32 para máxima estabilidad en Mac M2
 model_base = AutoModelForSeq2SeqLM.from_pretrained(
     config.base_model_name_or_path,
-    torch_dtype=torch.float32, 
+    torch_dtype=torch.float32, # Si usan windows/linux, cambia a float16 o quita esta línea
     low_cpu_mem_usage=True
 )
 tokenizer = AutoTokenizer.from_pretrained(config.base_model_name_or_path)
 
-# 3. FUSIONAR TU ENTRENAMIENTO (LoRA)
 model = PeftModel.from_pretrained(model_base, ruta_modelo)
 
-# CAMBIO 2: Detección correcta de hardware para Mac (MPS)
 if torch.backends.mps.is_available():
-    device = "mps"
+    device = "mps" # Si usan mac
 elif torch.cuda.is_available():
-    device = "cuda"
+    device = "cuda" # Si usan windows/linux
 else:
-    device = "cpu"
+    device = "cpu" # Si usan windows/linux
 
 print(f"Usando: {device}")
 
 model = model.to(device)
 model.eval()
 
-# --- FUNCIÓN DE TRADUCCIÓN ---
 def traducir(texto, idioma_origen="spa_Latn", idioma_destino="ita_Latn"):
     tokenizer.src_lang = idioma_origen
     inputs = tokenizer(texto, return_tensors="pt").to(device)
@@ -51,7 +44,6 @@ def traducir(texto, idioma_origen="spa_Latn", idioma_destino="ita_Latn"):
     resultado = tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
     return resultado
 
-# --- PRUEBAS ---
 frases = [
     "Soy un tonto, me voy a matar."
 ]
